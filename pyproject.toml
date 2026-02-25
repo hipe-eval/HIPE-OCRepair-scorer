@@ -1,0 +1,37 @@
+[project]
+name = "hipe-ocrepair-scorer"
+version = "0.9.0"
+description = "Python module for evaluating OCR post-correction"
+readme = "README.md"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Juri Opitz"},
+    {name = "Andriano Michail"},
+    {name = "Maud Ehrmann"},
+    {name = "Simon Clematide"},
+]
+keywords = ["ocr", "evaluation", "post-correction", "historical-documents"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Text Processing",
+]
+
+dependencies = [
+    "jiwer>=3.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyspellchecker>=0.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/hipe-eval/hipe-ocrepair-scorer"
+Repository = "https://github.com/hipe-eval/hipe-ocrepair-scorer"
+Documentation = "https://hipe-eval.github.io/HIPE-OCRepair-2026/"
