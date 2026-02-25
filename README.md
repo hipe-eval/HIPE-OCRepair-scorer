@@ -18,13 +18,7 @@ shared tasks on historical document processing.
 #### Release history
 - 2x Feb 2026: [v0.9](https://github.com/hipe-eval/HIPE-OCRepair-scorer/releases/tag/v0.9), initial release of the OCR post-correction scorer
 
-- [Main functionalities](#main-functionalities)
-- [Installation](#installation)
-- [Input format and entry points](#input-format-and-entry-points)
-- [File naming conventions](#file-naming-conventions)
-- [Python API usage](#python-api-usage)
-- [Output](#output)
-- [License](#license)
+[Main functionalities](#main-functionalities) | [Input format, scorer entry points, and naming conventions](#input-format-scorer-entry-points-and-naming-conventions) | [Installation and usage](#installation-and-usage) | [About](#about)
 
 ## Main functionalities 📊
 
@@ -110,7 +104,7 @@ Submission files to be evaluated are named as:
 teamname_<inputfile>_runX.jsonl
 ```
 
-## Installation 🔧
+## Installation and usage 🔧
 
 The scorer requires **Python 3.12** and can be installed as a pip package or used as an editable dependency:
 
@@ -124,7 +118,7 @@ source venv/bin/activate
 pip install -e .
 ```
 
-## Python API usage
+#### Python API usage
 
 ```python
 from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
@@ -132,22 +126,20 @@ from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
 # TO BE UPDATED
 ```
 
-## Output
+#### Output
 
 The `score` and `score_over_datasets` methods return a dict with:
 
 - `fold_scores`: per-stratum metrics as `(mean, low_ci, high_ci)`
 - `averaged_scores`: mean across folds with pooled confidence intervals
 
-## Contributors
+## About
 
-- ...
-
-## License
+### License
 
 See the `LICENSE` file in the repository for details.
 
-## Acknowledgments
+### Acknowledgments
 
 The HIPE-2026 organising team expresses its sincere appreciation to the ICDAR 2026 
 Conference and Competition Committee for hosting the task. HIPE-eval editions are 
