@@ -1,14 +1,28 @@
 from collections import defaultdict
 import numpy as np
-from jiwer import wer, cer, process_characters, process_words
+from jiwer import wer, process_characters, process_words
 import re
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
 
+def mer_from_counts(hits, substitutions, deletions, insertions):
+    """Compute character-level Match Error Rate (MER).
+
+    MER = (subs + dels + ins) / (hits + subs + dels + ins)
+
+    Unlike CER, MER is capped at [0, 1] because insertions are included
+    in the denominator. This reduces sensitivity to hallucinations.
+    """
+    total = hits + substitutions + deletions + insertions
+    if total == 0:
+        return 0.0
+    return (substitutions + deletions + insertions) / total
+
+
 def bootstrap_micro(
     dataset: Sequence[Sequence[float]],
-    subset_aggr_fct: Callable[[Sequence[float]], float] = lambda x: sum(x[1:]) / sum(x[:-1]),
+    subset_aggr_fct: Callable[[Sequence[float]], float] = lambda x: sum(x[1:]) / sum(x),
 ) -> Tuple[float, float, float, List[float]]:
     """Compute a micro-averaged score with bootstrap confidence intervals.
 
@@ -59,7 +73,7 @@ def bootstrap_simple(
 
 
 class Evaluation():
-    """Evaluate OCR post-correction outputs with CER/WER and preference metrics.
+    """Evaluate OCR post-correction outputs with MER/WER and preference metrics.
 
     This class computes document-level (JSON) and dataset-level metrics comparing
     post-correction output to ground truth, optionally against the raw OCR
@@ -97,24 +111,28 @@ class Evaluation():
 
     def _init_example_level_measures(self) -> None:
         """Register functions that compute per-example metrics."""
-        cer_sys = lambda example: cer(example["ground_truth"][self.target_unit_key],
-                                      example["ocr_postcorrection_output"][
-                                          self.target_unit_key])
+
+        def mer_sys(example):
+            output = process_characters(example["ground_truth"][self.target_unit_key],
+                                        example["ocr_postcorrection_output"][self.target_unit_key])
+            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+
         wer_sys = lambda example: wer(example["ground_truth"][self.target_unit_key],
                                       example["ocr_postcorrection_output"][
                                           self.target_unit_key])
 
-        cer_hyp = lambda example: cer(example["ground_truth"][self.target_unit_key],
-                                      example["ocr_hypothesis"][self.target_unit_key])
+        def mer_hyp(example):
+            output = process_characters(example["ground_truth"][self.target_unit_key],
+                                        example["ocr_hypothesis"][self.target_unit_key])
+            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+
         wer_hyp = lambda example: wer(example["ground_truth"][self.target_unit_key],
                                       example["ocr_hypothesis"][self.target_unit_key])
 
-        def cer_stats(ex):
+        def mer_stats(ex):
             output = process_characters(ex["ground_truth"][self.target_unit_key],
-                                        ex["ocr_postcorrection_output"][
-                                            self.target_unit_key])
+                                        ex["ocr_postcorrection_output"][self.target_unit_key])
             stats = output.hits, output.substitutions, output.deletions, output.insertions
-            assert output.cer == sum(stats[1:]) / sum(stats[:-1])
             return stats
 
         def wer_stats(ex):
@@ -122,7 +140,6 @@ class Evaluation():
                                    ex["ocr_postcorrection_output"][
                                        self.target_unit_key])
             stats = output.hits, output.substitutions, output.deletions, output.insertions
-            assert output.wer == sum(stats[1:]) / sum(stats[:-1])
             return stats
 
         def pref_score(ex, fct1, fct2):
@@ -142,27 +159,27 @@ class Evaluation():
             normalized_difference = (s1 - s2) / s2
             return normalized_difference
 
-        pref_score_cer = lambda example: pref_score(example, cer_sys, cer_hyp)
+        pref_score_mer = lambda example: pref_score(example, mer_sys, mer_hyp)
         pref_score_wer = lambda example: pref_score(example, wer_sys, wer_hyp)
 
-        pcis_cer = lambda example: pcis(example, cer_sys, cer_hyp)
+        pcis_mer = lambda example: pcis(example, mer_sys, mer_hyp)
         pcis_wer = lambda example: pcis(example, wer_sys, wer_hyp)
 
-        self.example_level_measures = {"cer": cer_sys,
+        self.example_level_measures = {"mer": mer_sys,
                                        "wer": wer_sys,
-                                       "cer_stats": cer_stats,
+                                       "mer_stats": mer_stats,
                                        "wer_stats": wer_stats,
-                                       "pref_score_cer": pref_score_cer,
+                                       "pref_score_mer": pref_score_mer,
                                        "pref_score_wer": pref_score_wer,
-                                       "pcis_cer": pcis_cer,
+                                       "pcis_mer": pcis_mer,
                                        "pcis_wer": pcis_wer}
 
     def _init_dataset_level_measures(self) -> None:
         """Register functions that compute dataset-level metrics."""
 
-        def get_cer_stats_data(ls):
+        def get_mer_stats_data(ls):
             stats = np.array(
-                [self.example_level_measures["cer_stats"](ex) for ex in ls])
+                [self.example_level_measures["mer_stats"](ex) for ex in ls])
             return stats
 
         def get_wer_stats_data(ls):
@@ -170,41 +187,55 @@ class Evaluation():
                 [self.example_level_measures["wer_stats"](ex) for ex in ls])
             return stats
 
-        cer_micro = lambda ls: bootstrap_micro(get_cer_stats_data(ls))
-        wer_micro = lambda ls: bootstrap_micro(get_wer_stats_data(ls))
+        mer_micro = lambda ls: bootstrap_micro(get_mer_stats_data(ls))
+        wer_micro = lambda ls: bootstrap_micro(get_wer_stats_data(ls),
+                                        subset_aggr_fct=lambda x: sum(x[1:]) / sum(x[:-1]))
 
-        cer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["cer"](ex) for ex in ls])
+        mer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["mer"](ex) for ex in ls])
         wer_macro = lambda ls: bootstrap_simple(
             [self.example_level_measures["wer"](ex) for ex in ls])
 
-        pref_score_cer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pref_score_cer"](ex) for ex in ls])
+        pref_score_mer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["pref_score_mer"](ex) for ex in ls])
         pref_score_wer_macro = lambda ls: bootstrap_simple(
             [self.example_level_measures["pref_score_wer"](ex) for ex in ls])
 
-        pcis_cer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pcis_cer"](ex) for ex in ls])
+        pcis_mer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["pcis_mer"](ex) for ex in ls])
         pcis_wer_macro = lambda ls: bootstrap_simple(
             [self.example_level_measures["pcis_wer"](ex) for ex in ls])
 
-        self.dataset_level_measures = {"cer_micro": cer_micro,
+        self.dataset_level_measures = {"mer_micro": mer_micro,
                                        "wer_micro": wer_micro,
-                                       "cer_macro": cer_macro,
+                                       "mer_macro": mer_macro,
                                        "wer_macro": wer_macro,
-                                       "pref_score_cer_macro": pref_score_cer_macro,
+                                       "pref_score_mer_macro": pref_score_mer_macro,
                                        "pref_score_wer_macro": pref_score_wer_macro,
-                                       "pcis_cer_macro": pcis_cer_macro,
+                                       "pcis_mer_macro": pcis_mer_macro,
                                        "pcis_wer_macro": pcis_wer_macro,
                                        }
 
     def _normalize(self) -> None:
-        """Normalize strings to lowercase alphanumerics and whitespace."""
+        """Normalize strings for evaluation."""
 
         def norm(string):
-            string = re.sub(r"[^a-z0-9]", " ", string)
-            string = re.sub(r"\s+", " ", string)
+            """Normalize a string for evaluation.
+
+            Normalization policy:
+            - Case-fold to lowercase.
+            - Keep Unicode letters and digits (including accented characters).
+            - Replace all other characters (punctuation, symbols) with space.
+            - Collapse whitespace.
+
+            This means evaluation is case-insensitive and punctuation-insensitive,
+            but sensitive to accented characters (é ≠ e).
+            """
             string = string.lower()
+            string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
+            string = re.sub(r"_", " ", string)
+            string = re.sub(r"\s+", " ", string)
+            string = string.strip()
             return string
 
         new_target_unit_key = self.target_unit_key + "_normalized"
@@ -255,14 +286,14 @@ class Evaluation():
         for fold in output["fold_scores"]:
             for metric_name in output["fold_scores"][fold]:
                 nums = output["fold_scores"][fold][metric_name]
-                output["fold_scores"][fold][metric_name] = (float(round(nums[0], 2)),
-                                                            float(round(nums[1], 2)),
-                                                            float(round(nums[2], 2)))
+                output["fold_scores"][fold][metric_name] = (float(nums[0]),
+                                                            float(nums[1]),
+                                                            float(nums[2]))
         for metric_name in output["averaged_scores"]:
             nums = output["averaged_scores"][metric_name]
-            output["averaged_scores"][metric_name] = (float(round(nums[0], 2)),
-                                                      float(round(nums[1], 2)),
-                                                      float(round(nums[2], 2)))
+            output["averaged_scores"][metric_name] = (float(nums[0]),
+                                                      float(nums[1]),
+                                                      float(nums[2]))
         return output
 
     def score_over_datasets(
