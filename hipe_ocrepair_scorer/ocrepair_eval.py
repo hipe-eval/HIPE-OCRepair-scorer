@@ -1,18 +1,19 @@
 from collections import defaultdict
 import numpy as np
-from jiwer import wer, process_characters, process_words
+from jiwer import process_characters, process_words
 import re
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
 
 def mer_from_counts(hits, substitutions, deletions, insertions):
-    """Compute character-level Match Error Rate (MER).
+    """Compute Match Error Rate (MER) from alignment counts.
 
     MER = (subs + dels + ins) / (hits + subs + dels + ins)
 
-    Unlike CER, MER is capped at [0, 1] because insertions are included
+    Unlike CER/WER, MER is capped at [0, 1] because insertions are included
     in the denominator. This reduces sensitivity to hallucinations.
+    Used for both character-level (cmer) and word-level (wmer) metrics.
     """
     total = hits + substitutions + deletions + insertions
     if total == 0:
@@ -73,12 +74,15 @@ def bootstrap_simple(
 
 
 class Evaluation():
-    """Evaluate OCR post-correction outputs with MER/WER and preference metrics.
+    """Evaluate OCR post-correction outputs with MER and preference metrics.
 
-    This class computes document-level (JSON) and dataset-level metrics comparing
+    This class computes document-level and dataset-level metrics comparing
     post-correction output to ground truth, optionally against the raw OCR
     hypothesis. It supports normalisation, stratification into folds, and
     bootstrapped confidence intervals for aggregate scores.
+
+    Metrics use Match Error Rate (MER) at both character level (cmer) and
+    word level (wmer). MER = (S+D+I) / (H+S+D+I), capped at [0, 1].
 
     Expected example structure:
     - ground_truth: {transcription_unit: str}
@@ -112,35 +116,35 @@ class Evaluation():
     def _init_example_level_measures(self) -> None:
         """Register functions that compute per-example metrics."""
 
-        def mer_sys(example):
+        def cmer_sys(example):
             output = process_characters(example["ground_truth"][self.target_unit_key],
                                         example["ocr_postcorrection_output"][self.target_unit_key])
             return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
 
-        wer_sys = lambda example: wer(example["ground_truth"][self.target_unit_key],
-                                      example["ocr_postcorrection_output"][
-                                          self.target_unit_key])
-
-        def mer_hyp(example):
+        def cmer_hyp(example):
             output = process_characters(example["ground_truth"][self.target_unit_key],
                                         example["ocr_hypothesis"][self.target_unit_key])
             return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
 
-        wer_hyp = lambda example: wer(example["ground_truth"][self.target_unit_key],
-                                      example["ocr_hypothesis"][self.target_unit_key])
+        def wmer_sys(example):
+            output = process_words(example["ground_truth"][self.target_unit_key],
+                                   example["ocr_postcorrection_output"][self.target_unit_key])
+            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
 
-        def mer_stats(ex):
+        def wmer_hyp(example):
+            output = process_words(example["ground_truth"][self.target_unit_key],
+                                   example["ocr_hypothesis"][self.target_unit_key])
+            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+
+        def cmer_stats(ex):
             output = process_characters(ex["ground_truth"][self.target_unit_key],
                                         ex["ocr_postcorrection_output"][self.target_unit_key])
-            stats = output.hits, output.substitutions, output.deletions, output.insertions
-            return stats
+            return output.hits, output.substitutions, output.deletions, output.insertions
 
-        def wer_stats(ex):
+        def wmer_stats(ex):
             output = process_words(ex["ground_truth"][self.target_unit_key],
-                                   ex["ocr_postcorrection_output"][
-                                       self.target_unit_key])
-            stats = output.hits, output.substitutions, output.deletions, output.insertions
-            return stats
+                                   ex["ocr_postcorrection_output"][self.target_unit_key])
+            return output.hits, output.substitutions, output.deletions, output.insertions
 
         def pref_score(ex, fct1, fct2):
             s1 = fct1(ex)
@@ -159,61 +163,60 @@ class Evaluation():
             normalized_difference = (s1 - s2) / s2
             return normalized_difference
 
-        pref_score_mer = lambda example: pref_score(example, mer_sys, mer_hyp)
-        pref_score_wer = lambda example: pref_score(example, wer_sys, wer_hyp)
+        pref_score_cmer = lambda example: pref_score(example, cmer_sys, cmer_hyp)
+        pref_score_wmer = lambda example: pref_score(example, wmer_sys, wmer_hyp)
 
-        pcis_mer = lambda example: pcis(example, mer_sys, mer_hyp)
-        pcis_wer = lambda example: pcis(example, wer_sys, wer_hyp)
+        pcis_cmer = lambda example: pcis(example, cmer_sys, cmer_hyp)
+        pcis_wmer = lambda example: pcis(example, wmer_sys, wmer_hyp)
 
-        self.example_level_measures = {"mer": mer_sys,
-                                       "wer": wer_sys,
-                                       "mer_stats": mer_stats,
-                                       "wer_stats": wer_stats,
-                                       "pref_score_mer": pref_score_mer,
-                                       "pref_score_wer": pref_score_wer,
-                                       "pcis_mer": pcis_mer,
-                                       "pcis_wer": pcis_wer}
+        self.example_level_measures = {"cmer": cmer_sys,
+                                       "wmer": wmer_sys,
+                                       "cmer_stats": cmer_stats,
+                                       "wmer_stats": wmer_stats,
+                                       "pref_score_cmer": pref_score_cmer,
+                                       "pref_score_wmer": pref_score_wmer,
+                                       "pcis_cmer": pcis_cmer,
+                                       "pcis_wmer": pcis_wmer}
 
     def _init_dataset_level_measures(self) -> None:
         """Register functions that compute dataset-level metrics."""
 
-        def get_mer_stats_data(ls):
+        def get_cmer_stats_data(ls):
             stats = np.array(
-                [self.example_level_measures["mer_stats"](ex) for ex in ls])
+                [self.example_level_measures["cmer_stats"](ex) for ex in ls])
             return stats
 
-        def get_wer_stats_data(ls):
+        def get_wmer_stats_data(ls):
             stats = np.array(
-                [self.example_level_measures["wer_stats"](ex) for ex in ls])
+                [self.example_level_measures["wmer_stats"](ex) for ex in ls])
             return stats
 
-        mer_micro = lambda ls: bootstrap_micro(get_mer_stats_data(ls))
-        wer_micro = lambda ls: bootstrap_micro(get_wer_stats_data(ls),
-                                        subset_aggr_fct=lambda x: sum(x[1:]) / sum(x[:-1]))
+        cmer_micro = lambda ls: bootstrap_micro(get_cmer_stats_data(ls))
+        wmer_micro = lambda ls: bootstrap_micro(get_wmer_stats_data(ls))
 
-        mer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["mer"](ex) for ex in ls])
-        wer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["wer"](ex) for ex in ls])
+        cmer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["cmer"](ex) for ex in ls])
+        wmer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["wmer"](ex) for ex in ls])
 
-        pref_score_mer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pref_score_mer"](ex) for ex in ls])
-        pref_score_wer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pref_score_wer"](ex) for ex in ls])
+        pref_score_cmer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["pref_score_cmer"](ex) for ex in ls])
+        pref_score_wmer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["pref_score_wmer"](ex) for ex in ls])
 
-        pcis_mer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pcis_mer"](ex) for ex in ls])
-        pcis_wer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pcis_wer"](ex) for ex in ls])
+        pcis_cmer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["pcis_cmer"](ex) for ex in ls])
+        pcis_wmer_macro = lambda ls: bootstrap_simple(
+            [self.example_level_measures["pcis_wmer"](ex) for ex in ls])
 
-        self.dataset_level_measures = {"mer_micro": mer_micro,
-                                       "wer_micro": wer_micro,
-                                       "mer_macro": mer_macro,
-                                       "wer_macro": wer_macro,
-                                       "pref_score_mer_macro": pref_score_mer_macro,
-                                       "pref_score_wer_macro": pref_score_wer_macro,
-                                       "pcis_mer_macro": pcis_mer_macro,
-                                       "pcis_wer_macro": pcis_wer_macro,
+        self.dataset_level_measures = {"cmer_micro": cmer_micro,
+                                       "wmer_micro": wmer_micro,
+                                       "cmer_macro": cmer_macro,
+                                       "wmer_macro": wmer_macro,
+                                       "pref_score_cmer_macro": pref_score_cmer_macro,
+                                       "pref_score_wmer_macro": pref_score_wmer_macro,
+                                       "pcis_cmer_macro": pcis_cmer_macro,
+                                       "pcis_wmer_macro": pcis_wmer_macro,
                                        }
 
     def _normalize(self) -> None:
