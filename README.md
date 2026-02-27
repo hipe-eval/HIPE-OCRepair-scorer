@@ -23,57 +23,67 @@ shared tasks on historical document processing.
 ## Main functionalities 📊
 
 The scorer evaluates OCR post-correction outputs against ground-truth
-transcriptions. It computes character and word error rates (CER/WER) as well as
-preference metrics that compare the post-correction output to the raw OCR
-hypothesis.
+transcriptions. It computes match error rates at character and word level
+(cMER/wMER) as well as preference metrics that compare the post-correction
+output to the raw OCR hypothesis.
 
 ### Metrics
 
-We report MER (match error rate), which we treat as a **normalized CER** in the
-sense of the OCR-D evaluation spec (see
-https://ocr-d.de/en/spec/ocrd_eval.html#character-error-rate-cer). MER is
-micro-averaged across the corpus so longer documents contribute more than shorter
-ones, and it is capped in [0, 1], which reduces sensitivity to extreme
-hallucinations while remaining easy to interpret.
+All metrics are based on **Match Error Rate (MER)**, computed as:
+
+$$\text{MER} = \frac{S + D + I}{H + S + D + I}$$
+
+where H = hits, S = substitutions, D = deletions, I = insertions. Unlike
+standard CER/WER, MER is capped in [0, 1] because insertions are included in the
+denominator. This reduces sensitivity to extreme hallucinations while remaining
+easy to interpret. MER is equivalent to the **normalized CER** in the sense of
+the OCR-D evaluation spec (see
+https://ocr-d.de/en/spec/ocrd_eval.html#character-error-rate-cer).
 
 **Primary metrics**
 
-- **MER (micro-averaged CER)**: corpus-level character error rate, the main
-  evaluation metric.
+- **cMER (character-level MER, micro-averaged)**: corpus-level character match
+  error rate, the main evaluation metric. Micro-averaged so longer documents
+  contribute more than shorter ones.
 - **Preference score (macro average)**: a simple sign-based metric computed per
   input document and then averaged unweighted across documents. For each item *i*:
-  $s_i = \text{sign}(\text{CER}_{\text{in},i} - \text{CER}_{\text{out},i})$,
+  $s_i = \text{sign}(\text{cMER}_{\text{in},i} - \text{cMER}_{\text{out},i})$,
   yielding 1 (improved), 0 (tied), or -1 (worse). This captures how consistently
-  a system improves over the input, while MER captures the magnitude of improvement.
+  a system improves over the input, while cMER captures the magnitude of improvement.
 
 **Additional metrics**
 
-- **WER-based metrics**: reported for completeness, but CER/MER is preferred in
+- **wMER (word-level MER)**: reported for completeness, but cMER is preferred in
   historical OCR due to spelling variation and transcription conventions.
 - **Confidence intervals**: computed for all measures to ensure statistical
   robustness.
 
 ### Normalization and stratification
 
-The evaluation can normalize text to lowercase alphanumeric tokens and whitespace
-before scoring. It can also stratify results by dataset or any user-defined
-mapping.
+Before scoring, text is normalized as follows:
+- Case-folded to lowercase
+- Unicode letters and digits are kept (including accented characters such as é, ç, ü)
+- All other characters (punctuation, symbols) are replaced with space
+- Whitespace is collapsed
+
+This means evaluation is **case-insensitive** and **punctuation-insensitive**, but
+**sensitive to accented characters** (é ≠ e).
+
+Results can be stratified by dataset or any user-defined mapping.
 
 ## Input format, scorer entry points, and naming conventions
 
 The scorer accepts two entry points (the same example structure is used in both):
 
-1. **A pair of JSON documents**: one for reference, one for hypothesis.
-2. **Pointers to two folders**:
-   - `reference/`: JSONL files with reference data.
-   - `hypothesis/`: JSONL files with hypothesis data.
+1. **A pair of JSONL files**: one for reference, one for hypothesis.
+2. **A pair of folders**: containing reference and hypothesis JSONL files respectively.
 
-Each JSON or JSONL record should contain a dictionary with these fields:
+Each JSONL record should contain a dictionary with these fields:
 
+- `document_metadata`: `{ "document_id": "...", "primary_dataset_name": "..." }`
 - `ground_truth`: `{ "transcription_unit": "..." }`
-- `ocr_postcorrection_output`: `{ "transcription_unit": "..." }`
 - `ocr_hypothesis`: `{ "transcription_unit": "..." }`
-- `document_metadata`: `{ "primary_dataset_name": "..." }`
+- `ocr_postcorrection_output`: `{ "transcription_unit": "..." }`
 
 All JSON documents conform to the HIPE-OCRepair JSON Schema (add link later).
 
@@ -118,20 +128,71 @@ source venv/bin/activate
 pip install -e .
 ```
 
-#### Python API usage
+### CLI usage
 
-```python
-from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
+After installation, the `hipe-ocrepair-scorer` command is available.
 
-# TO BE UPDATED
+#### Evaluate a single file pair
+
+```bash
+hipe-ocrepair-scorer \
+  --reference data/sample/reference/hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample.jsonl \
+  --hypothesis data/sample/hypothesis/no_edits_baseline/no_edits_hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample_run1.jsonl
 ```
 
-#### Output
+#### Evaluate all files in a folder pair
 
-The `score` and `score_over_datasets` methods return a dict with:
+```bash
+hipe-ocrepair-scorer \
+  --reference-dir data/sample/reference/ \
+  --hypothesis-dir data/sample/hypothesis/no_edits_baseline/
+```
 
-- `fold_scores`: per-stratum metrics as `(mean, low_ci, high_ci)`
-- `averaged_scores`: mean across folds with pooled confidence intervals
+In folder mode, the scorer matches each reference file to its corresponding
+hypothesis file by filename. Hypothesis files are expected to contain the reference
+filename stem (see naming conventions above).
+
+#### Output format
+
+Results are printed to stdout as JSON.
+
+**File mode** returns scores for the single file pair:
+
+```json
+{
+  "averaged_scores": {
+    "metric_name": [score, lower_ci, upper_ci],
+    ...
+  },
+  "fold_scores": {
+    "dataset_name": {
+      "metric_name": [score, lower_ci, upper_ci],
+      ...
+    }
+  }
+}
+```
+
+**Folder mode** returns per-file results for each reference/hypothesis pair:
+
+```json
+{
+  "per_file": {
+    "reference_filename_1": {
+      "averaged_scores": { ... },
+      "fold_scores": { ... }
+    },
+    "reference_filename_2": {
+      "averaged_scores": { ... },
+      "fold_scores": { ... }
+    }
+  }
+}
+```
+
+Each metric is a tuple of `(score, lower_95%_CI, upper_95%_CI)`. Metrics include
+`cmer_micro`, `wmer_micro`, `cmer_macro`, `wmer_macro`, `pref_score_cmer_macro`,
+`pref_score_wmer_macro`, `pcis_cmer_macro`, and `pcis_wmer_macro`.
 
 ## About
 

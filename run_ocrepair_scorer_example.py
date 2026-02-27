@@ -1,100 +1,90 @@
+"""Example script showing how to use the HIPE-OCRepair scorer programmatically.
+
+This script demonstrates both entry points:
+1. Single file pair (reference + hypothesis)
+2. Folder pair (reference directory + hypothesis directory)
+
+Run from the repository root:
+    python run_ocrepair_scorer_example.py
+"""
+
 import json
-from spellchecker import SpellChecker
+from pathlib import Path
+
+from hipe_ocrepair_scorer.cli import (
+    load_jsonl,
+    load_schema,
+    merge_reference_hypothesis,
+    find_reference_files,
+    find_hypothesis_file,
+)
 from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
 
 
-class SpellCheckCorrect():
+SAMPLE_DIR = Path("data/sample")
+REF_DIR = SAMPLE_DIR / "reference"
+HYP_DIR = SAMPLE_DIR / "hypothesis" / "no_edits_baseline"
 
-    def __init__(self):
-
-        self.name = "spellcheck"
-        self.spellcheckers = {}
-        self.spellcheckers["en"] = SpellChecker()  # the default is English (language='en')
-        self.spellcheckers["fr"] = SpellChecker(language='es')  # use the Spanish Dictionary
-        self.spellcheckers["de"] = SpellChecker(language='de')
-
-    def correct_text(self, sentence, lang):
-        spell = self.spellcheckers[lang]
-        words = spell.split_words(sentence)
-        misspelled = {w for w in spell.unknown(words) if len(w) < 8}
-        new = []
-        for word in words:
-            if word not in misspelled:
-                new.append(word)
-                continue
-            correction = spell.correction(word)
-            if not correction:
-                new.append(word)
-                continue
-            new.append(correction)
-        return " ".join(new)
+# Pick the first reference file for the single-file example
+REF_FILE = sorted(REF_DIR.glob("*.jsonl"))[0]
+HYP_FILE = sorted(HYP_DIR.glob("*.jsonl"))[0]
 
 
-class DummyCorrectReproduce():
+def example_file_pair():
+    """Evaluate a single reference/hypothesis file pair."""
+    print("=" * 60)
+    print("Example 1: Single file pair")
+    print("=" * 60)
+    print(f"  Reference:  {REF_FILE.name}")
+    print(f"  Hypothesis: {HYP_FILE.name}")
+    print()
 
-    def __init__(self):
-        self.name = "same"
+    ref_records = load_jsonl(REF_FILE)
+    hyp_records = load_jsonl(HYP_FILE)
+    merged = merge_reference_hypothesis(ref_records, hyp_records)
 
-    @staticmethod
-    def correct_text(sentence, lang):
-        return sentence
+    print(f"  Merged {len(merged)} documents")
+
+    evaluation = Evaluation(merged)
+    results = evaluation.score_over_datasets(normalize=True)
+
+    print(json.dumps(results, indent=2, ensure_ascii=False))
+    print()
 
 
-class DummyCorrectRandom():
+def example_folder_pair():
+    """Evaluate all matching files across reference and hypothesis directories."""
+    print("=" * 60)
+    print("Example 2: Folder pair")
+    print("=" * 60)
+    print(f"  Reference dir:  {REF_DIR}")
+    print(f"  Hypothesis dir: {HYP_DIR}")
+    print()
 
-    def __init__(self):
-        from random import seed, shuffle
-        self.shuffle = shuffle
-        self.name = "random"
-        seed(42)
+    ref_files = find_reference_files(REF_DIR)
+    all_merged = []
 
-    def correct_text(self, sentence, lang):
-        sentence = sentence.split()
-        self.shuffle(sentence)
-        sentence = " ".join(sentence)
-        return sentence
+    for ref_path in ref_files:
+        hyp_path = find_hypothesis_file(HYP_DIR, ref_path)
+        if hyp_path is None:
+            print(f"  [SKIP] No hypothesis file for {ref_path.name}")
+            continue
+
+        print(f"  {ref_path.name} <-> {hyp_path.name}")
+        ref_records = load_jsonl(ref_path)
+        hyp_records = load_jsonl(hyp_path)
+        merged = merge_reference_hypothesis(ref_records, hyp_records)
+        all_merged.extend(merged)
+
+    print(f"\n  Total: {len(all_merged)} documents")
+
+    evaluation = Evaluation(all_merged)
+    results = evaluation.score_over_datasets(normalize=True)
+
+    print(json.dumps(results, indent=2, ensure_ascii=False))
+    print()
 
 
 if __name__ == "__main__":
-
-    # We load data
-    dataroot = "data/datasets/converted/v0.2/"
-    datafiles = [dataroot + "impresso-nzz/de/ocr-post-correction-v0.2-impresso-nzz-test-de.jsonl",
-                 dataroot + "icdar-2019/de/ocr-post-correction-v0.2-icdar-2019-test-de.jsonl",
-                 dataroot + "overproof/en/ocr-post-correction-v0.2-overproof-test-en.jsonl"]
-
-    # We get all jsonlines from all data sets.
-    # Each line contains one post-correction challenge.
-    jsonlines = []
-    for filepath in datafiles:
-        with open(filepath, "r") as f:
-            for line in f:
-                dic = json.loads(line)
-                jsonlines.append(dic)
-
-    # We instantiate a system this system
-    system = DummyCorrectReproduce()
-
-    # We use the system to predict a refined output
-    # for each initial OCR hypothesis
-    for jl in jsonlines:
-        # retrieve challenge
-        hyp = jl["ocr_hypothesis"]["transcription_unit"]
-        language = jl["document_metadata"]["language"]
-
-        # we apply the system
-        post_correct = system.correct_text(hyp, language)
-
-        # add output as "transcription unit"
-        jl["ocr_postcorrection_output"]["transcription_unit"] = post_correct
-
-        # add meta information about the applied system
-        jl["ocr_postcorrection_output"]["ocr_postcorrection_system"] = system.name
-
-    # We finally evaluate the predictions
-
-    evaluator = Evaluation(jsonlines)
-    mainresult = evaluator.score_over_datasets()
-    latexstring = evaluator.scores2latex(mainresult, system.name)
-    print(mainresult)
-    print(latexstring)
+    example_file_pair()
+    example_folder_pair()
