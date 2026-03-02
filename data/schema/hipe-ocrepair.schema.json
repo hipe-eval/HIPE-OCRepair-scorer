@@ -20,6 +20,16 @@
           "format": "uri",
           "description": "The DOI (Digital Object Identifier) of the primary dataset."
         },
+        "benchmark_dataset_doi": {
+          "type": "string",
+          "format": "uri",
+          "description": "The DOI (Digital Object Identifier) of the primary dataset."
+        },
+        "primary_dataset_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "An URL for background information on the primary dataset (useful if missing DOI)."
+        },
         "primary_dataset_version": {
           "type": "string",
           "description": "The version of the primary dataset."
