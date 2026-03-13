@@ -130,7 +130,7 @@ pip install -e .
 
 ### Python usage
 
-´´´python
+```python
 import json
 from hipe_ocrepair_scorer import Evaluation, align_records
 
