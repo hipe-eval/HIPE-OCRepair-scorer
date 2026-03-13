@@ -23,7 +23,10 @@ from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
 # Schema loading and validation
 # ---------------------------------------------------------------------------
 
-_BUILTIN_SCHEMA_PATH = Path(__file__).parent.parent / "data" / "schema" / "hipe-ocrepair.schema.json"
+from importlib import resources
+
+with resources.path("hipe_ocrepair_scorer.data.schema", "hipe-ocrepair.schema.json") as p:
+    _BUILTIN_SCHEMA_PATH = p
 
 
 def load_schema(schema_path: Path) -> dict:
