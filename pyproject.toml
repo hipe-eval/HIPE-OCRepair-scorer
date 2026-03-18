@@ -19,7 +19,6 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Text Processing",
 ]
-
 dependencies = [
     "jiwer>=3.0.0",
     "numpy>=1.24.0",
@@ -34,6 +33,9 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["hipe_ocrepair_scorer*"]
 
+[tool.setuptools.package-data]
+hipe_ocrepair_scorer = ["data/schema/*.json"]
+
 [project.scripts]     
 hipe-ocrepair-scorer = "hipe_ocrepair_scorer.cli:main"
 
@@ -41,3 +43,7 @@ hipe-ocrepair-scorer = "hipe_ocrepair_scorer.cli:main"
 Homepage = "https://github.com/hipe-eval/hipe-ocrepair-scorer"
 Repository = "https://github.com/hipe-eval/hipe-ocrepair-scorer"
 Documentation = "https://hipe-eval.github.io/HIPE-OCRepair-2026/"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"

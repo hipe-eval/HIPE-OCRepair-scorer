@@ -5,6 +5,24 @@ import re
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
+def align_records(ref_records: List[Dict], hyp_records: List[Dict]) -> List[Dict]:
+    """Aligns reference and hypothesis records by document_id for Evaluation."""
+    hyp_by_id = {
+        rec["document_metadata"]["document_id"]: rec
+        for rec in hyp_records
+    }
+
+    merged = []
+    for ref in ref_records:
+        doc_id = ref["document_metadata"]["document_id"]
+        if doc_id in hyp_by_id:
+            merged.append({
+                "document_metadata": ref["document_metadata"],
+                "ground_truth": ref["ground_truth"],
+                "ocr_hypothesis": ref["ocr_hypothesis"],
+                "ocr_postcorrection_output": hyp_by_id[doc_id]["ocr_postcorrection_output"],
+            })
+    return merged
 
 def mer_from_counts(hits, substitutions, deletions, insertions):
     """Compute Match Error Rate (MER) from alignment counts.
@@ -355,3 +373,5 @@ class Evaluation():
                 tablelines.append(
                     " & ".join(["", mn.replace("_", "-")]) + " & " + content + "\\\\")
         return "\n".join(tablelines)
+
+

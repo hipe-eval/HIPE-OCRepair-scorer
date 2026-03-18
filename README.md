@@ -128,6 +128,59 @@ source venv/bin/activate
 pip install -e .
 ```
 
+### Python usage
+
+```python
+import json
+from hipe_ocrepair_scorer import Evaluation, align_records
+
+# Load your JSONL files
+def load_jsonl(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+REF = load_jsonl("reference.jsonl")
+PRED = load_jsonl("hypothesis.jsonl")
+
+# 1. Align the files by document_id
+merged_data = align_records(REF, PRED)
+
+# 2. Run the evaluation
+evaluator = Evaluation(merged_data)
+results = evaluator.score_over_datasets(normalize=True)
+
+# 3. Print results (e.g., Micro-averaged Character MER)
+score, lo, hi = results["averaged_scores"]["cmer_micro"]
+print(f"Character MER: {score:.4f} (95% CI: {lo:.4f} - {hi:.4f})")
+```
+
+As `reference.jsonl` and `hypothesis.jsonl` you could test with [this toy reference file](https://github.com/hipe-eval/HIPE-OCRepair-scorer/blob/3-first-pypi-upload/hipe_ocrepair_scorer/data/sample/reference/hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample.jsonl) and [this toy hypothesis file](https://github.com/hipe-eval/HIPE-OCRepair-scorer/blob/3-first-pypi-upload/hipe_ocrepair_scorer/data/sample/hypothesis/random_edits_baseline/random_hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample_run1.jsonl).
+
+
+# overwrite this with any prediction file
+import json
+from hipe_ocrepair_scorer import Evaluation, align_records
+
+# Load your JSONL files
+def load_jsonl(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+REF = load_jsonl("reference.jsonl")
+PRED = load_jsonl("hypothesis.jsonl")
+
+# 1. Align the files by document_id
+merged_data = align_records(REF, PRED)
+
+# 2. Run the evaluation
+evaluator = Evaluation(merged_data)
+results = evaluator.score_over_datasets(normalize=True)
+
+# 3. Print results (e.g., Micro-averaged Character MER)
+score, lo, hi = results["averaged_scores"]["cmer_micro"]
+print(f"Character MER: {score:.4f} (95% CI: {lo:.4f} - {hi:.4f})")
+```
+
 ### CLI usage
 
 After installation, the `hipe-ocrepair-scorer` command is available.
@@ -136,16 +189,16 @@ After installation, the `hipe-ocrepair-scorer` command is available.
 
 ```bash
 hipe-ocrepair-scorer \
-  --reference data/sample/reference/hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample.jsonl \
-  --hypothesis data/sample/hypothesis/no_edits_baseline/no_edits_hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample_run1.jsonl
+  --reference hipe_ocrepair_scorer/data/sample/reference/hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample.jsonl \
+  --hypothesis hipe_ocrepair_scorer/data/sample/hypothesis/no_edits_baseline/no_edits_hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample_run1.jsonl
 ```
 
 #### Evaluate all files in a folder pair
 
 ```bash
 hipe-ocrepair-scorer \
-  --reference-dir data/sample/reference/ \
-  --hypothesis-dir data/sample/hypothesis/no_edits_baseline/
+  --reference-dir hipe_ocrepair_scorer/data/sample/reference/ \
+  --hypothesis-dir hipe_ocrepair_scorer/data/sample/hypothesis/no_edits_baseline/
 ```
 
 In folder mode, the scorer matches each reference file to its corresponding
