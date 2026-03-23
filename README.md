@@ -16,7 +16,8 @@ shared tasks on historical document processing.
   for the Hugging Face leaderboard
 
 #### Release history
-- 2x Feb 2026: [v0.9](https://github.com/hipe-eval/HIPE-OCRepair-scorer/releases/tag/v0.9), initial release of the OCR post-correction scorer
+- Feb 2026: [v0.9](https://github.com/hipe-eval/HIPE-OCRepair-scorer/releases/tag/v0.9), initial release of the OCR post-correction scorer
+- March 2026: Release on pypi.
 
 [Main functionalities](#main-functionalities) | [Input format, scorer entry points, and naming conventions](#input-format-scorer-entry-points-and-naming-conventions) | [Installation and usage](#installation-and-usage) | [About](#about)
 
@@ -46,10 +47,12 @@ https://ocr-d.de/en/spec/ocrd_eval.html#character-error-rate-cer).
   error rate, the main evaluation metric. Micro-averaged so longer documents
   contribute more than shorter ones.
 - **Preference score (macro average)**: a simple sign-based metric computed per
-  input document and then averaged unweighted across documents. For each item *i*:
-  $s_i = \text{sign}(\text{cMER}_{\text{in},i} - \text{cMER}_{\text{out},i})$,
-  yielding 1 (improved), 0 (tied), or -1 (worse). This captures how consistently
-  a system improves over the input, while cMER captures the magnitude of improvement.
+  input document and then averaged unweighted across documents. For each item we 
+  calculate two cMER scores, one compares the corrected hypothesis against the 
+  gold, and the other compares the hypothesis against the gold. This
+  yields 1 (improved), 0 (tied), or -1 (worse) and captures how consistently
+  a system improves over the input, while cMER on the micro-level (see above) 
+  captures the magnitude of improvement.
 
 **Additional metrics**
 
