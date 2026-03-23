@@ -148,7 +148,7 @@ PRED = load_jsonl("hypothesis.jsonl")
 # 1. Align the files by document_id
 merged_data = align_records(REF, PRED)
 
-# 2. Run the evaluation
+# 2. Run the evaluation; .score_over_datasets stratifies by `primary_dataset_name`
 evaluator = Evaluation(merged_data)
 results = evaluator.score_over_datasets(normalize=True)
 
