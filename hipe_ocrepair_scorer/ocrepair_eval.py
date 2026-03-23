@@ -2,27 +2,65 @@ from collections import defaultdict
 import numpy as np
 from jiwer import process_characters, process_words
 import re
+import sys
+
 from copy import deepcopy
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
+
 def align_records(ref_records: List[Dict], hyp_records: List[Dict]) -> List[Dict]:
-    """Aligns reference and hypothesis records by document_id for Evaluation."""
-    hyp_by_id = {
-        rec["document_metadata"]["document_id"]: rec
-        for rec in hyp_records
-    }
+    """Aligns reference and hypothesis records by document_id for Evaluation.
+
+    Missing or placeholder ('None') hypothesis records are kept with an empty
+    postcorrection output, which results in a maximum error score for that document.
+    Warnings are printed to stderr for both cases.
+    """
+    hyp_by_id = {rec["document_metadata"]["document_id"]: rec for rec in hyp_records}
 
     merged = []
+    missing = []
+    placeholder = []
+
     for ref in ref_records:
         doc_id = ref["document_metadata"]["document_id"]
-        if doc_id in hyp_by_id:
-            merged.append({
+
+        if doc_id not in hyp_by_id:
+            missing.append(doc_id)
+            output = {"transcription_unit": ""}
+        elif (
+            hyp_by_id[doc_id]["ocr_postcorrection_output"]["transcription_unit"]
+            == "None"
+        ):
+            placeholder.append(doc_id)
+            output = {"transcription_unit": ""}
+        else:
+            output = hyp_by_id[doc_id]["ocr_postcorrection_output"]
+
+        merged.append(
+            {
                 "document_metadata": ref["document_metadata"],
                 "ground_truth": ref["ground_truth"],
                 "ocr_hypothesis": ref["ocr_hypothesis"],
-                "ocr_postcorrection_output": hyp_by_id[doc_id]["ocr_postcorrection_output"],
-            })
+                "ocr_postcorrection_output": output,
+            }
+        )
+
+    if missing:
+        print(
+            f"[WARNING] {len(missing)} reference document(s) not found in hypothesis, "
+            f"scored with empty output: {missing}",
+            file=sys.stderr,
+        )
+
+    if placeholder:
+        print(
+            f"[WARNING] {len(placeholder)} document(s) have placeholder 'None' as "
+            f"postcorrection output, scored with empty output: {placeholder}",
+            file=sys.stderr,
+        )
+
     return merged
+
 
 def mer_from_counts(hits, substitutions, deletions, insertions):
     """Compute Match Error Rate (MER) from alignment counts.
@@ -91,7 +129,7 @@ def bootstrap_simple(
     return mainscore, lo, hi, avgs
 
 
-class Evaluation():
+class Evaluation:
     """Evaluate OCR post-correction outputs with MER and preference metrics.
 
     This class computes document-level and dataset-level metrics comparing
@@ -117,14 +155,9 @@ class Evaluation():
         self,
         list_of_example_dicts: List[Dict[str, Any]],
     ) -> None:
-        """Initialize the evaluator with example dictionaries.
-
-        Each example is expected to include:
-        - ground_truth: {transcription_unit: str}
-        - ocr_postcorrection_output: {transcription_unit: str}
-        - ocr_hypothesis: {transcription_unit: str}
-        - document_metadata: {primary_dataset_name: str}
-        """
+        """..."""
+        if not list_of_example_dicts:
+            raise ValueError("No documents to evaluate.")
         self.data = list_of_example_dicts
         self._init_example_level_measures()
         self._init_dataset_level_measures()
@@ -135,34 +168,64 @@ class Evaluation():
         """Register functions that compute per-example metrics."""
 
         def cmer_sys(example):
-            output = process_characters(example["ground_truth"][self.target_unit_key],
-                                        example["ocr_postcorrection_output"][self.target_unit_key])
-            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+            output = process_characters(
+                example["ground_truth"][self.target_unit_key],
+                example["ocr_postcorrection_output"][self.target_unit_key],
+            )
+            return mer_from_counts(
+                output.hits, output.substitutions, output.deletions, output.insertions
+            )
 
         def cmer_hyp(example):
-            output = process_characters(example["ground_truth"][self.target_unit_key],
-                                        example["ocr_hypothesis"][self.target_unit_key])
-            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+            output = process_characters(
+                example["ground_truth"][self.target_unit_key],
+                example["ocr_hypothesis"][self.target_unit_key],
+            )
+            return mer_from_counts(
+                output.hits, output.substitutions, output.deletions, output.insertions
+            )
 
         def wmer_sys(example):
-            output = process_words(example["ground_truth"][self.target_unit_key],
-                                   example["ocr_postcorrection_output"][self.target_unit_key])
-            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+            output = process_words(
+                example["ground_truth"][self.target_unit_key],
+                example["ocr_postcorrection_output"][self.target_unit_key],
+            )
+            return mer_from_counts(
+                output.hits, output.substitutions, output.deletions, output.insertions
+            )
 
         def wmer_hyp(example):
-            output = process_words(example["ground_truth"][self.target_unit_key],
-                                   example["ocr_hypothesis"][self.target_unit_key])
-            return mer_from_counts(output.hits, output.substitutions, output.deletions, output.insertions)
+            output = process_words(
+                example["ground_truth"][self.target_unit_key],
+                example["ocr_hypothesis"][self.target_unit_key],
+            )
+            return mer_from_counts(
+                output.hits, output.substitutions, output.deletions, output.insertions
+            )
 
         def cmer_stats(ex):
-            output = process_characters(ex["ground_truth"][self.target_unit_key],
-                                        ex["ocr_postcorrection_output"][self.target_unit_key])
-            return output.hits, output.substitutions, output.deletions, output.insertions
+            output = process_characters(
+                ex["ground_truth"][self.target_unit_key],
+                ex["ocr_postcorrection_output"][self.target_unit_key],
+            )
+            return (
+                output.hits,
+                output.substitutions,
+                output.deletions,
+                output.insertions,
+            )
 
         def wmer_stats(ex):
-            output = process_words(ex["ground_truth"][self.target_unit_key],
-                                   ex["ocr_postcorrection_output"][self.target_unit_key])
-            return output.hits, output.substitutions, output.deletions, output.insertions
+            output = process_words(
+                ex["ground_truth"][self.target_unit_key],
+                ex["ocr_postcorrection_output"][self.target_unit_key],
+            )
+            return (
+                output.hits,
+                output.substitutions,
+                output.deletions,
+                output.insertions,
+            )
 
         def pref_score(ex, fct1, fct2):
             s1 = fct1(ex)
@@ -187,55 +250,66 @@ class Evaluation():
         pcis_cmer = lambda example: pcis(example, cmer_sys, cmer_hyp)
         pcis_wmer = lambda example: pcis(example, wmer_sys, wmer_hyp)
 
-        self.example_level_measures = {"cmer": cmer_sys,
-                                       "wmer": wmer_sys,
-                                       "cmer_stats": cmer_stats,
-                                       "wmer_stats": wmer_stats,
-                                       "pref_score_cmer": pref_score_cmer,
-                                       "pref_score_wmer": pref_score_wmer,
-                                       "pcis_cmer": pcis_cmer,
-                                       "pcis_wmer": pcis_wmer}
+        self.example_level_measures = {
+            "cmer": cmer_sys,
+            "wmer": wmer_sys,
+            "cmer_stats": cmer_stats,
+            "wmer_stats": wmer_stats,
+            "pref_score_cmer": pref_score_cmer,
+            "pref_score_wmer": pref_score_wmer,
+            "pcis_cmer": pcis_cmer,
+            "pcis_wmer": pcis_wmer,
+        }
 
     def _init_dataset_level_measures(self) -> None:
         """Register functions that compute dataset-level metrics."""
 
         def get_cmer_stats_data(ls):
             stats = np.array(
-                [self.example_level_measures["cmer_stats"](ex) for ex in ls])
+                [self.example_level_measures["cmer_stats"](ex) for ex in ls]
+            )
             return stats
 
         def get_wmer_stats_data(ls):
             stats = np.array(
-                [self.example_level_measures["wmer_stats"](ex) for ex in ls])
+                [self.example_level_measures["wmer_stats"](ex) for ex in ls]
+            )
             return stats
 
         cmer_micro = lambda ls: bootstrap_micro(get_cmer_stats_data(ls))
         wmer_micro = lambda ls: bootstrap_micro(get_wmer_stats_data(ls))
 
         cmer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["cmer"](ex) for ex in ls])
+            [self.example_level_measures["cmer"](ex) for ex in ls]
+        )
         wmer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["wmer"](ex) for ex in ls])
+            [self.example_level_measures["wmer"](ex) for ex in ls]
+        )
 
         pref_score_cmer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pref_score_cmer"](ex) for ex in ls])
+            [self.example_level_measures["pref_score_cmer"](ex) for ex in ls]
+        )
         pref_score_wmer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pref_score_wmer"](ex) for ex in ls])
+            [self.example_level_measures["pref_score_wmer"](ex) for ex in ls]
+        )
 
         pcis_cmer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pcis_cmer"](ex) for ex in ls])
+            [self.example_level_measures["pcis_cmer"](ex) for ex in ls]
+        )
         pcis_wmer_macro = lambda ls: bootstrap_simple(
-            [self.example_level_measures["pcis_wmer"](ex) for ex in ls])
+            [self.example_level_measures["pcis_wmer"](ex) for ex in ls]
+        )
 
-        self.dataset_level_measures = {"cmer_micro": cmer_micro,
-                                       "wmer_micro": wmer_micro,
-                                       "cmer_macro": cmer_macro,
-                                       "wmer_macro": wmer_macro,
-                                       "pref_score_cmer_macro": pref_score_cmer_macro,
-                                       "pref_score_wmer_macro": pref_score_wmer_macro,
-                                       "pcis_cmer_macro": pcis_cmer_macro,
-                                       "pcis_wmer_macro": pcis_wmer_macro,
-                                       }
+        self.dataset_level_measures = {
+            "cmer_micro": cmer_micro,
+            "wmer_micro": wmer_micro,
+            "cmer_macro": cmer_macro,
+            "wmer_macro": wmer_macro,
+            "pref_score_cmer_macro": pref_score_cmer_macro,
+            "pref_score_wmer_macro": pref_score_wmer_macro,
+            "pcis_cmer_macro": pcis_cmer_macro,
+            "pcis_wmer_macro": pcis_wmer_macro,
+        }
 
     def _normalize(self) -> None:
         """Normalize strings for evaluation."""
@@ -297,8 +371,9 @@ class Evaluation():
         output = {"averaged_scores": {}, "fold_scores": fold_scores}
         for scorename in self.dataset_level_measures:
             scores = [fold_scores[fold][scorename][0] for fold in fold_scores]
-            all_sampled_scores = [fold_scores[fold][scorename][3] for fold in
-                                  fold_scores]
+            all_sampled_scores = [
+                fold_scores[fold][scorename][3] for fold in fold_scores
+            ]
             all_sampled_avgs = np.array(all_sampled_scores).mean(axis=0)
             lo = np.percentile(all_sampled_avgs, 2.5)
             hi = np.percentile(all_sampled_avgs, 97.5)
@@ -307,14 +382,18 @@ class Evaluation():
         for fold in output["fold_scores"]:
             for metric_name in output["fold_scores"][fold]:
                 nums = output["fold_scores"][fold][metric_name]
-                output["fold_scores"][fold][metric_name] = (float(nums[0]),
-                                                            float(nums[1]),
-                                                            float(nums[2]))
+                output["fold_scores"][fold][metric_name] = (
+                    float(nums[0]),
+                    float(nums[1]),
+                    float(nums[2]),
+                )
         for metric_name in output["averaged_scores"]:
             nums = output["averaged_scores"][metric_name]
-            output["averaged_scores"][metric_name] = (float(nums[0]),
-                                                      float(nums[1]),
-                                                      float(nums[2]))
+            output["averaged_scores"][metric_name] = (
+                float(nums[0]),
+                float(nums[1]),
+                float(nums[2]),
+            )
         return output
 
     def score_over_datasets(
@@ -329,7 +408,8 @@ class Evaluation():
         if normalize:
             self._normalize()
         self._stratify(
-            lambda example: example["document_metadata"]["primary_dataset_name"])
+            lambda example: example["document_metadata"]["primary_dataset_name"]
+        )
         output = self.score()
         return output
 
@@ -354,8 +434,11 @@ class Evaluation():
                         result["fold_scores"][fold].pop(metric_name)
             header = []
             for fold in folds:
-                header.append("\\multicolumn{{{}}}{{{}}}{{{}}}".format(
-                    len(result["fold_scores"][fold]), "c", fold))
+                header.append(
+                    "\\multicolumn{{{}}}{{{}}}{{{}}}".format(
+                        len(result["fold_scores"][fold]), "c", fold
+                    )
+                )
             header = " & ".join(header)
             content = []
             for fold in folds:
@@ -363,15 +446,20 @@ class Evaluation():
                     score, lo, hi = result["fold_scores"][fold][metric_name]
                     content.append(
                         "$_{{\\text{{{:.2f}}}}}\\text{{{:.2f}}}_{{\\text{{{:.2f}}}}}$".format(
-                            lo, score, hi))
+                            lo, score, hi
+                        )
+                    )
             content = " & ".join(content)
             if i == 0:
                 tablelines.append(header + "\\\\")
-                tablelines.append(" & ".join(
-                    [systemname, mn.replace("_", "-")]) + " & " + content + "\\\\")
+                tablelines.append(
+                    " & ".join([systemname, mn.replace("_", "-")])
+                    + " & "
+                    + content
+                    + "\\\\"
+                )
             else:
                 tablelines.append(
-                    " & ".join(["", mn.replace("_", "-")]) + " & " + content + "\\\\")
+                    " & ".join(["", mn.replace("_", "-")]) + " & " + content + "\\\\"
+                )
         return "\n".join(tablelines)
-
-
