@@ -16,7 +16,8 @@ shared tasks on historical document processing.
   for the Hugging Face leaderboard
 
 #### Release history
-- 2x Feb 2026: [v0.9](https://github.com/hipe-eval/HIPE-OCRepair-scorer/releases/tag/v0.9), initial release of the OCR post-correction scorer
+- Feb 2026: [v0.9](https://github.com/hipe-eval/HIPE-OCRepair-scorer/releases/tag/v0.9), initial release of the OCR post-correction scorer
+- March 2026: Release on pypi.
 
 [Main functionalities](#main-functionalities) | [Input format, scorer entry points, and naming conventions](#input-format-scorer-entry-points-and-naming-conventions) | [Installation and usage](#installation-and-usage) | [About](#about)
 
@@ -46,10 +47,12 @@ https://ocr-d.de/en/spec/ocrd_eval.html#character-error-rate-cer).
   error rate, the main evaluation metric. Micro-averaged so longer documents
   contribute more than shorter ones.
 - **Preference score (macro average)**: a simple sign-based metric computed per
-  input document and then averaged unweighted across documents. For each item *i*:
-  $s_i = \text{sign}(\text{cMER}_{\text{in},i} - \text{cMER}_{\text{out},i})$,
-  yielding 1 (improved), 0 (tied), or -1 (worse). This captures how consistently
-  a system improves over the input, while cMER captures the magnitude of improvement.
+  input document and then averaged unweighted across documents. For each item we 
+  calculate two cMER scores, one compares the corrected hypothesis against the 
+  gold, and the other compares the hypothesis against the gold. This
+  yields 1 (improved), 0 (tied), or -1 (worse) and captures how consistently
+  a system improves over the input, while cMER on the micro-level (see above) 
+  captures the magnitude of improvement.
 
 **Additional metrics**
 
@@ -145,7 +148,7 @@ PRED = load_jsonl("hypothesis.jsonl")
 # 1. Align the files by document_id
 merged_data = align_records(REF, PRED)
 
-# 2. Run the evaluation
+# 2. Run the evaluation; .score_over_datasets stratifies by `primary_dataset_name`
 evaluator = Evaluation(merged_data)
 results = evaluator.score_over_datasets(normalize=True)
 
@@ -155,31 +158,6 @@ print(f"Character MER: {score:.4f} (95% CI: {lo:.4f} - {hi:.4f})")
 ```
 
 As `reference.jsonl` and `hypothesis.jsonl` you could test with [this toy reference file](https://github.com/hipe-eval/HIPE-OCRepair-scorer/blob/3-first-pypi-upload/hipe_ocrepair_scorer/data/sample/reference/hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample.jsonl) and [this toy hypothesis file](https://github.com/hipe-eval/HIPE-OCRepair-scorer/blob/3-first-pypi-upload/hipe_ocrepair_scorer/data/sample/hypothesis/random_edits_baseline/random_hipe-ocrepair-bench_v0.9_icdar2017_v1.2_train_fr.sample_run1.jsonl).
-
-
-# overwrite this with any prediction file
-import json
-from hipe_ocrepair_scorer import Evaluation, align_records
-
-# Load your JSONL files
-def load_jsonl(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return [json.loads(line) for line in f if line.strip()]
-
-REF = load_jsonl("reference.jsonl")
-PRED = load_jsonl("hypothesis.jsonl")
-
-# 1. Align the files by document_id
-merged_data = align_records(REF, PRED)
-
-# 2. Run the evaluation
-evaluator = Evaluation(merged_data)
-results = evaluator.score_over_datasets(normalize=True)
-
-# 3. Print results (e.g., Micro-averaged Character MER)
-score, lo, hi = results["averaged_scores"]["cmer_micro"]
-print(f"Character MER: {score:.4f} (95% CI: {lo:.4f} - {hi:.4f})")
-```
 
 ### CLI usage
 

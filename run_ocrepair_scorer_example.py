@@ -21,7 +21,7 @@ from hipe_ocrepair_scorer.cli import (
 from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
 
 
-SAMPLE_DIR = Path("data/sample")
+SAMPLE_DIR = Path("hipe_ocrepair_scorer/data/sample")
 REF_DIR = SAMPLE_DIR / "reference"
 HYP_DIR = SAMPLE_DIR / "hypothesis" / "no_edits_baseline"
 
