@@ -368,6 +368,7 @@ class Evaluation:
             but sensitive to accented characters (é ≠ e).
             """
             string = string.lower()
+            string = string.replace("¬\n", "")
             string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
             string = re.sub(r"_", " ", string)
             string = re.sub(r"\s+", " ", string)
@@ -486,9 +487,8 @@ class Evaluation:
                 for metric_name in result["fold_scores"][fold]:
                     score, lo, hi = result["fold_scores"][fold][metric_name]
                     content.append(
-                        "$_{{\\text{{{:.2f}}}}}\\text{{{:.2f}}}_{{\\text{{{:.2f}}}}}$".format(
-                            lo, score, hi
-                        )
+                        "$_{{\\text{{{:.2f}}}}}\\text{{{:.2f}}}_{{\\text{{{:.2f}}}}}$"
+                        .format(lo, score, hi)
                     )
             content = " & ".join(content)
             if i == 0:
