@@ -14,12 +14,34 @@ def align_records(ref_records: List[Dict], hyp_records: List[Dict]) -> List[Dict
     Missing or placeholder ('None') hypothesis records are kept with an empty
     postcorrection output, which results in a maximum error score for that document.
     Warnings are printed to stderr for both cases.
+
+    Records with structural problems (missing keys) are reported with the
+    affected document_id and treated as empty output.
     """
-    hyp_by_id = {rec["document_metadata"]["document_id"]: rec for rec in hyp_records}
+    # Build hypothesis lookup, skipping malformed records.
+    hyp_by_id = {}
+    malformed_hyp = []
+    for i, rec in enumerate(hyp_records):
+        try:
+            doc_id = rec["document_metadata"]["document_id"]
+        except (KeyError, TypeError):
+            malformed_hyp.append(
+                f"  hypothesis record {i}: missing 'document_metadata.document_id'"
+            )
+            continue
+        hyp_by_id[doc_id] = rec
+
+    if malformed_hyp:
+        print(
+            f"[WARNING] {len(malformed_hyp)} hypothesis record(s) skipped "
+            f"(cannot extract document_id):\n" + "\n".join(malformed_hyp),
+            file=sys.stderr,
+        )
 
     merged = []
     missing = []
     placeholder = []
+    bad_structure = []
 
     for ref in ref_records:
         doc_id = ref["document_metadata"]["document_id"]
@@ -27,14 +49,26 @@ def align_records(ref_records: List[Dict], hyp_records: List[Dict]) -> List[Dict
         if doc_id not in hyp_by_id:
             missing.append(doc_id)
             output = {"transcription_unit": ""}
-        elif (
-            hyp_by_id[doc_id]["ocr_postcorrection_output"]["transcription_unit"]
-            == "None"
-        ):
-            placeholder.append(doc_id)
-            output = {"transcription_unit": ""}
         else:
-            output = hyp_by_id[doc_id]["ocr_postcorrection_output"]
+            hyp = hyp_by_id[doc_id]
+            # Guard against missing 'ocr_postcorrection_output' or 'transcription_unit'.
+            postcorr = hyp.get("ocr_postcorrection_output")
+            if postcorr is None or not isinstance(postcorr, dict):
+                bad_structure.append(
+                    f"  {doc_id}: missing key 'ocr_postcorrection_output'"
+                )
+                output = {"transcription_unit": ""}
+            elif "transcription_unit" not in postcorr:
+                bad_structure.append(
+                    f"  {doc_id}: missing key "
+                    f"'ocr_postcorrection_output.transcription_unit'"
+                )
+                output = {"transcription_unit": ""}
+            elif postcorr["transcription_unit"] == "None":
+                placeholder.append(doc_id)
+                output = {"transcription_unit": ""}
+            else:
+                output = postcorr
 
         merged.append(
             {
@@ -49,6 +83,13 @@ def align_records(ref_records: List[Dict], hyp_records: List[Dict]) -> List[Dict
         print(
             f"[WARNING] {len(missing)} reference document(s) not found in hypothesis, "
             f"scored with empty output: {missing}",
+            file=sys.stderr,
+        )
+
+    if bad_structure:
+        print(
+            f"[WARNING] {len(bad_structure)} hypothesis document(s) have malformed "
+            f"structure, scored with empty output:\n" + "\n".join(bad_structure),
             file=sys.stderr,
         )
 
