@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Impresso OCR Benchmark Document JSON Schema",
+  "description": "Schema for OCR post-correction benchmark submissions and reference data. Version: 2026-04-09. Updated to make WER/CER requirements conditional on ground truth availability and support backward-compatible placeholder values.",
   "type": "object",
   "properties": {
     "document_metadata": {
@@ -127,7 +128,7 @@
         },
         "paragraph_offsets": {
           "type": "array",
-          "description": "Paragraph start and end offsets, relative to the GT transcription unit.",
+          "description": "Paragraph start and end offsets, relative to the GT transcription unit. Empty array when not available.",
           "items": {
             "type": "array",
             "items": {
@@ -139,7 +140,7 @@
         },
         "line_offsets": {
           "type": "array",
-          "description": "Line start and end offsets, relative to the GT transcription unit.",
+          "description": "Line start and end offsets, relative to the GT transcription unit. Empty array when not available.",
           "items": {
             "type": "array",
             "items": {
@@ -151,7 +152,7 @@
         },
         "sentence_offsets": {
           "type": "array",
-          "description": "Sentence start and end offsets, relative to the GT transcription unit.",
+          "description": "Sentence start and end offsets, relative to the GT transcription unit. Empty array when not available.",
           "items": {
             "type": "array",
             "items": {
@@ -162,8 +163,8 @@
           }
         },
         "quality_report": {
+          "description": "Automatically generated report evaluating OCR quality using substitution, insertion, deletion counts, and alignment scores (towards the ground truth). Empty object when not available.",
           "type": "object",
-          "description": "Automatically generated report evaluating OCR quality using substitution, insertion, deletion counts, and alignment scores (towards the ground truth).",
           "properties": {
             "nb_char_substitutions": {
               "type": "integer",
@@ -209,18 +210,10 @@
               "type": "array",
               "description": "Alignment scores between each OCR paragraph and its corresponding ground truth paragraph."
             }
-          },
-          "required": [
-            "wer",
-            "cer"
-          ]
+          }
         }
       },
-      "required": [
-        "transcription_unit",
-        "num_tokens",
-        "num_chars"
-      ]
+      "required": ["transcription_unit", "num_tokens", "num_chars"]
     },
     "ground_truth": {
       "type": "object",
@@ -228,29 +221,38 @@
       "properties": {
         "transcription_unit": {
           "type": "string",
-          "description": "The ground truth transcription of the unit."
+          "description": "The ground truth transcription of the unit. Empty string when not available."
         },
         "num_tokens": {
           "type": "integer",
-          "description": "Number of tokens in the ground truth transcription."
+          "description": "Number of tokens in the ground truth transcription. Zero when not available."
         },
         "num_chars": {
           "type": "integer",
-          "description": "Number of characters in the ground truth transcription."
+          "description": "Number of characters in the ground truth transcription. Zero when not available."
         },
         "quality_report": {
-          "type": "object",
           "description": "Automatically generated report evaluating OCR quality using substitution, insertion, deletion counts, and alignment scores (towards the ground truth).",
-          "properties": {
-            "ocr_quality_score": {
-              "type": "number",
-              "description": "OCR quality score for the transcription. Used internally for the benchmark preparation. Note that there is no quality report object for the ground truth transcription."
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "ocr_quality_score": {
+                  "type": "number",
+                  "description": "OCR quality score for the transcription. Used internally for the benchmark preparation."
+                }
+              }
+            },
+            {
+              "type": "array",
+              "maxItems": 0,
+              "description": "Empty array when no ground truth transcription is available (backward compatibility)."
             }
-          }
+          ]
         },
         "paragraph_offsets": {
           "type": "array",
-          "description": "Paragraph offsets in the ground truth transcription.",
+          "description": "Paragraph offsets in the ground truth transcription. Empty array when not available.",
           "items": {
             "type": "array",
             "items": {
@@ -260,7 +262,7 @@
         },
         "line_offsets": {
           "type": "array",
-          "description": "Line offsets in the ground truth transcription.",
+          "description": "Line offsets in the ground truth transcription. Empty array when not available.",
           "items": {
             "type": "array",
             "items": {
@@ -270,7 +272,7 @@
         },
         "sentence_offsets": {
           "type": "array",
-          "description": "Sentence offsets in the ground truth transcription.",
+          "description": "Sentence offsets in the ground truth transcription. Empty array when not available.",
           "items": {
             "type": "array",
             "items": {
@@ -279,11 +281,7 @@
           }
         }
       },
-      "required": [
-        "transcription_unit",
-        "num_tokens",
-        "num_chars"
-      ]
+      "required": ["transcription_unit", "num_tokens", "num_chars"]
     },
     "ocr_postcorrection_output": {
       "type": "object",
@@ -307,7 +305,7 @@
         },
         "quality_report": {
           "type": "object",
-          "description": "",
+          "description": "Quality metrics for the post-corrected output. Empty object when not computed.",
           "properties": {
             "nb_char_substitutions": {
               "type": "integer",
@@ -346,8 +344,38 @@
       "description": "Any additional information about the document."
     }
   },
-  "required": [
-    "document_metadata",
-    "ocr_hypothesis"
-  ]
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ground_truth": {
+            "type": "object",
+            "properties": {
+              "transcription_unit": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["transcription_unit"]
+          }
+        },
+        "required": ["ground_truth"]
+      },
+      "then": {
+        "properties": {
+          "ocr_hypothesis": {
+            "type": "object",
+            "properties": {
+              "quality_report": {
+                "type": "object",
+                "required": ["wer", "cer"]
+              }
+            },
+            "required": ["quality_report"]
+          }
+        }
+      }
+    }
+  ],
+  "required": ["document_metadata", "ocr_hypothesis"]
 }
