@@ -25,7 +25,9 @@ from hipe_ocrepair_scorer.ocrepair_eval import Evaluation
 
 from importlib import resources
 
-with resources.path("hipe_ocrepair_scorer.data.schema", "hipe-ocrepair.schema.json") as p:
+with resources.path(
+    "hipe_ocrepair_scorer.data.schema", "hipe-ocrepair.schema.json"
+) as p:
     _BUILTIN_SCHEMA_PATH = p
 
 
@@ -35,7 +37,9 @@ def load_schema(schema_path: Path) -> dict:
         return json.load(f)
 
 
-def validate_jsonl_record(record: dict, schema: dict, filepath: str, line_num: int) -> List[str]:
+def validate_jsonl_record(
+    record: dict, schema: dict, filepath: str, line_num: int
+) -> List[str]:
     """Validate a single JSONL record against the schema.
 
     Returns a list of error messages (empty if valid).
@@ -51,6 +55,7 @@ def validate_jsonl_record(record: dict, schema: dict, filepath: str, line_num: i
 # ---------------------------------------------------------------------------
 # JSONL loading
 # ---------------------------------------------------------------------------
+
 
 def load_jsonl(filepath: Path, schema: Optional[dict] = None) -> List[Dict[str, Any]]:
     """Load a JSONL file into a list of dicts.
@@ -89,6 +94,7 @@ def load_jsonl(filepath: Path, schema: Optional[dict] = None) -> List[Dict[str, 
 # Merging reference and hypothesis
 # ---------------------------------------------------------------------------
 
+
 def merge_reference_hypothesis(
     ref_records: List[Dict[str, Any]],
     hyp_records: List[Dict[str, Any]],
@@ -101,18 +107,34 @@ def merge_reference_hypothesis(
     Validates that:
     - All reference document_ids are present in the hypothesis.
     - The postcorrection output is not the placeholder "None".
+
+    Records with structural problems (missing keys) are reported with the
+    affected document_id and treated as errors.
     """
     hyp_by_id = {}
-    for rec in hyp_records:
-        doc_id = rec["document_metadata"]["document_id"]
+    for i, rec in enumerate(hyp_records):
+        try:
+            doc_id = rec["document_metadata"]["document_id"]
+        except (KeyError, TypeError):
+            print(
+                f"[ERROR] Hypothesis record {i}: missing "
+                f"'document_metadata.document_id'. Record keys: "
+                f"{list(rec.keys()) if isinstance(rec, dict) else type(rec).__name__}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         if doc_id in hyp_by_id:
-            print(f"[ERROR] Duplicate document_id in hypothesis: {doc_id}", file=sys.stderr)
+            print(
+                f"[ERROR] Duplicate document_id in hypothesis: {doc_id}",
+                file=sys.stderr,
+            )
             sys.exit(1)
         hyp_by_id[doc_id] = rec
 
     merged = []
     missing = []
     placeholder = []
+    bad_structure = []
 
     for ref in ref_records:
         doc_id = ref["document_metadata"]["document_id"]
@@ -121,17 +143,40 @@ def merge_reference_hypothesis(
             continue
 
         hyp = hyp_by_id[doc_id]
-        output_text = hyp["ocr_postcorrection_output"]["transcription_unit"]
+
+        # Guard against missing 'ocr_postcorrection_output' or 'transcription_unit'.
+        postcorr = hyp.get("ocr_postcorrection_output")
+        if postcorr is None or not isinstance(postcorr, dict):
+            bad_structure.append(f"  {doc_id}: missing key 'ocr_postcorrection_output'")
+            continue
+        if "transcription_unit" not in postcorr:
+            bad_structure.append(
+                f"  {doc_id}: missing key "
+                f"'ocr_postcorrection_output.transcription_unit'"
+            )
+            continue
+
+        output_text = postcorr["transcription_unit"]
         if output_text == "None":
             placeholder.append(doc_id)
             continue
 
-        merged.append({
-            "document_metadata": ref["document_metadata"],
-            "ground_truth": ref["ground_truth"],
-            "ocr_hypothesis": ref["ocr_hypothesis"],
-            "ocr_postcorrection_output": hyp["ocr_postcorrection_output"],
-        })
+        merged.append(
+            {
+                "document_metadata": ref["document_metadata"],
+                "ground_truth": ref["ground_truth"],
+                "ocr_hypothesis": ref["ocr_hypothesis"],
+                "ocr_postcorrection_output": hyp["ocr_postcorrection_output"],
+            }
+        )
+
+    if bad_structure:
+        print(
+            f"[ERROR] {len(bad_structure)} hypothesis document(s) have malformed "
+            f"structure:\n" + "\n".join(bad_structure),
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     if missing:
         print(
@@ -158,6 +203,7 @@ def merge_reference_hypothesis(
 # ---------------------------------------------------------------------------
 # Folder-mode helpers
 # ---------------------------------------------------------------------------
+
 
 def find_reference_files(ref_dir: Path) -> List[Path]:
     """Find all JSONL files in the reference directory."""
@@ -205,6 +251,7 @@ def find_hypothesis_file(hyp_dir: Path, ref_path: Path) -> Optional[Path]:
 # Main
 # ---------------------------------------------------------------------------
 
+
 def _round_scores(results: dict, decimals: int = 4) -> dict:
     """Round all score tuples in the results dict."""
     for section in ("fold_scores", "averaged_scores"):
@@ -212,7 +259,9 @@ def _round_scores(results: dict, decimals: int = 4) -> dict:
             for fold in results[section]:
                 for metric in results[section][fold]:
                     vals = results[section][fold][metric]
-                    results[section][fold][metric] = tuple(round(v, decimals) for v in vals)
+                    results[section][fold][metric] = tuple(
+                        round(v, decimals) for v in vals
+                    )
         else:
             for metric in results[section]:
                 vals = results[section][metric]
@@ -258,7 +307,7 @@ def main():
         "--schema",
         default=None,
         help="Path to JSON schema file for validation. "
-             "Uses built-in schema if not specified.",
+        "Uses built-in schema if not specified.",
     )
     parser.add_argument(
         "--aggregate",
@@ -274,16 +323,23 @@ def main():
     dir_mode = args.reference_dir is not None or args.hypothesis_dir is not None
 
     if file_mode and dir_mode:
-        parser.error("Cannot mix --reference/--hypothesis with --reference-dir/--hypothesis-dir.")
+        parser.error(
+            "Cannot mix --reference/--hypothesis with --reference-dir/--hypothesis-dir."
+        )
     if not file_mode and not dir_mode:
-        parser.error("Provide either --reference/--hypothesis or --reference-dir/--hypothesis-dir.")
+        parser.error(
+            "Provide either --reference/--hypothesis or --reference-dir/--hypothesis-dir."
+        )
 
     # Load schema
     schema_path = Path(args.schema) if args.schema else _BUILTIN_SCHEMA_PATH
     if schema_path.exists():
         schema = load_schema(schema_path)
     else:
-        print(f"[WARNING] Schema file not found at {schema_path}, skipping validation.", file=sys.stderr)
+        print(
+            f"[WARNING] Schema file not found at {schema_path}, skipping validation.",
+            file=sys.stderr,
+        )
         schema = None
 
     if file_mode:
@@ -308,7 +364,9 @@ def main():
 
     else:  # dir_mode
         if not args.reference_dir or not args.hypothesis_dir:
-            parser.error("Both --reference-dir and --hypothesis-dir are required in folder mode.")
+            parser.error(
+                "Both --reference-dir and --hypothesis-dir are required in folder mode."
+            )
 
         ref_dir = Path(args.reference_dir)
         hyp_dir = Path(args.hypothesis_dir)
@@ -345,7 +403,10 @@ def main():
                 all_merged.extend(merged)
 
         if not all_results:
-            print("[ERROR] No valid documents to evaluate across all files.", file=sys.stderr)
+            print(
+                "[ERROR] No valid documents to evaluate across all files.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         output = {"per_file": all_results}
