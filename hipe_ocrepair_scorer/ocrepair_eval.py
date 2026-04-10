@@ -368,6 +368,7 @@ class Evaluation:
             but sensitive to accented characters (é ≠ e).
             """
             string = string.lower()
+            string = string.replace("ß", "ss")
             string = string.replace("¬\n", "")
             string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
             string = re.sub(r"_", " ", string)
