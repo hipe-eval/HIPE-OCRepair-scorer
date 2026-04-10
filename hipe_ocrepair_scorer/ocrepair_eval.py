@@ -199,7 +199,7 @@ class Evaluation:
         """..."""
         if not list_of_example_dicts:
             raise ValueError("No documents to evaluate.")
-        np.random_seed(42)
+        np.random.seed(42)
         self.data = list_of_example_dicts
         self._init_example_level_measures()
         self._init_dataset_level_measures()
