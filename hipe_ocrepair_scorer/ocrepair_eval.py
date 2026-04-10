@@ -364,6 +364,7 @@ class Evaluation:
             - Keep Unicode letters and digits (including accented characters).
             - Replace all other characters (punctuation, symbols) with space.
             - Collapse whitespace.
+            - explicate some ligatures.
 
             This means evaluation is case-insensitive and punctuation-insensitive,
             but sensitive to accented characters (é ≠ e).
