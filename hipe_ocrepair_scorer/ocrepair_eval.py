@@ -368,8 +368,16 @@ class Evaluation:
             This means evaluation is case-insensitive and punctuation-insensitive,
             but sensitive to accented characters (é ≠ e).
             """
+            # lower cases
             string = string.lower()
+            
+            # ligature
             string = string.replace("ß", "ss")
+            string = string.replace("ꝛ", "r")
+            string = string.replace("œ", "oe")
+            string = string.replace("æ", "ae")
+            
+            # other
             string = string.replace("¬\n", "")
             string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
             string = re.sub(r"_", " ", string)
