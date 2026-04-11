@@ -35,6 +35,7 @@ def norm(string: str) -> str:
     
     
     # other normalizations
+    string = string.replace("—\n", "") # DTA line break marker also in GT
     string = string.replace("¬\n", "")
     string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
     string = re.sub(r"_", " ", string)
@@ -153,6 +154,42 @@ def mer_from_counts(hits, substitutions, deletions, insertions):
     return (substitutions + deletions + insertions) / total
 
 
+def filter_excluded_from_icdar_evaluation(
+    examples: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Drop examples explicitly excluded from ICDAR evaluation.
+
+    Examples are excluded when their ground-truth payload contains
+    ``exclude_from_icdar_evaluation`` set to ``True``.
+    """
+    included = []
+    excluded_doc_ids = []
+
+    for i, example in enumerate(examples):
+        ground_truth = example.get("ground_truth")
+        if isinstance(ground_truth, dict) and ground_truth.get(
+            "exclude_from_icdar_evaluation"
+        ) is True:
+            document_metadata = example.get("document_metadata")
+            if isinstance(document_metadata, dict):
+                doc_id = document_metadata.get("document_id", f"<unknown:{i}>")
+            else:
+                doc_id = f"<unknown:{i}>"
+            excluded_doc_ids.append(doc_id)
+            continue
+        included.append(example)
+
+    if excluded_doc_ids:
+        print(
+            f"[WARNING] {len(excluded_doc_ids)} document(s) flagged with "
+            f"'ground_truth.exclude_from_icdar_evaluation = True' were "
+            f"excluded from evaluation: {excluded_doc_ids}",
+            file=sys.stderr,
+        )
+
+    return included
+
+
 def bootstrap_micro(
     dataset: Sequence[Sequence[float]],
     subset_aggr_fct: Callable[[Sequence[float]], float] = lambda x: sum(x[1:]) / sum(x),
@@ -217,10 +254,13 @@ class Evaluation:
     word level (wmer). MER = (S+D+I) / (H+S+D+I), capped at [0, 1].
 
     Expected example structure:
-    - ground_truth: {transcription_unit: str}
+    - ground_truth: {transcription_unit: str, exclude_from_icdar_evaluation: bool}
     - ocr_postcorrection_output: {transcription_unit: str}
     - ocr_hypothesis: {transcription_unit: str}
     - document_metadata: {primary_dataset_name: str}
+
+    Examples with ``ground_truth.exclude_from_icdar_evaluation == True`` are
+    excluded from scoring and reported on stderr.
 
     Primary outputs:
     - fold_scores: per-stratum metrics with (mean, low_ci, high_ci)
@@ -235,7 +275,12 @@ class Evaluation:
         if not list_of_example_dicts:
             raise ValueError("No documents to evaluate.")
         np.random.seed(42)
-        self.data = list_of_example_dicts
+        self.data = filter_excluded_from_icdar_evaluation(list_of_example_dicts)
+        if not self.data:
+            raise ValueError(
+                "No documents to evaluate after excluding documents flagged "
+                "with 'ground_truth.exclude_from_icdar_evaluation = True'."
+            )
         self._init_example_level_measures()
         self._init_dataset_level_measures()
         self.data_stratified = {}
