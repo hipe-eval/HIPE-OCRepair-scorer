@@ -103,6 +103,35 @@ def align_records(ref_records: List[Dict], hyp_records: List[Dict]) -> List[Dict
     return merged
 
 
+def normalize_string(string):
+    """Normalize a string for evaluation.
+
+    Normalization policy:
+    - Case-fold to lowercase.
+    - Keep Unicode letters and digits (including accented characters).
+    - Replace all other characters (punctuation, symbols) with space.
+    - Collapse whitespace.
+    - Explicate some ligatures.
+
+    This means evaluation is case-insensitive and punctuation-insensitive,
+    but sensitive to accented characters (é ≠ e).
+    """
+    string = string.lower()
+    # ligature
+    string = string.replace("ß", "ss")
+    string = string.replace("ꝛ", "r")
+    string = string.replace("œ", "oe")
+    string = string.replace("æ", "ae")
+
+    # other
+    string = string.replace("¬\n", "")
+    string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
+    string = re.sub(r"_", " ", string)
+    string = re.sub(r"\s+", " ", string)
+    string = string.strip()
+    return string
+
+
 def mer_from_counts(hits, substitutions, deletions, insertions):
     """Compute Match Error Rate (MER) from alignment counts.
 
@@ -355,46 +384,17 @@ class Evaluation:
 
     def _normalize(self) -> None:
         """Normalize strings for evaluation."""
-
-        def norm(string):
-            """Normalize a string for evaluation.
-
-            Normalization policy:
-            - Case-fold to lowercase.
-            - Keep Unicode letters and digits (including accented characters).
-            - Replace all other characters (punctuation, symbols) with space.
-            - Collapse whitespace.
-            - explicate some ligatures.
-
-            This means evaluation is case-insensitive and punctuation-insensitive,
-            but sensitive to accented characters (é ≠ e).
-            """
-            # lower cases
-            string = string.lower()
-            
-            # ligature
-            string = string.replace("ß", "ss")
-            string = string.replace("ꝛ", "r")
-            string = string.replace("œ", "oe")
-            string = string.replace("æ", "ae")
-            
-            # other
-            string = string.replace("¬\n", "")
-            string = re.sub(r"[^\w]", " ", string, flags=re.UNICODE)
-            string = re.sub(r"_", " ", string)
-            string = re.sub(r"\s+", " ", string)
-            string = string.strip()
-            return string
-
         new_target_unit_key = self.target_unit_key + "_normalized"
 
         for example in self.data:
             gt = example["ground_truth"][self.target_unit_key]
             ocr = example["ocr_postcorrection_output"][self.target_unit_key]
             hyp = example["ocr_hypothesis"][self.target_unit_key]
-            example["ground_truth"][new_target_unit_key] = norm(gt)
-            example["ocr_postcorrection_output"][new_target_unit_key] = norm(ocr)
-            example["ocr_hypothesis"][new_target_unit_key] = norm(hyp)
+            example["ground_truth"][new_target_unit_key] = normalize_string(gt)
+            example["ocr_postcorrection_output"][new_target_unit_key] = (
+                normalize_string(ocr)
+            )
+            example["ocr_hypothesis"][new_target_unit_key] = normalize_string(hyp)
 
         self.target_unit_key = new_target_unit_key
 
@@ -498,8 +498,9 @@ class Evaluation:
                 for metric_name in result["fold_scores"][fold]:
                     score, lo, hi = result["fold_scores"][fold][metric_name]
                     content.append(
-                        "$_{{\\text{{{:.2f}}}}}\\text{{{:.2f}}}_{{\\text{{{:.2f}}}}}$"
-                        .format(lo, score, hi)
+                        "$_{{\\text{{{:.2f}}}}}\\text{{{:.2f}}}_{{\\text{{{:.2f}}}}}$".format(
+                            lo, score, hi
+                        )
                     )
             content = " & ".join(content)
             if i == 0:
