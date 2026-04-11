@@ -72,6 +72,10 @@ Before scoring, text is normalized as follows:
 This means evaluation is **case-insensitive** and **punctuation-insensitive**, but
 **sensitive to accented characters** (é ≠ e).
 
+Reference records can also opt out of scoring by setting
+`ground_truth.exclude_from_icdar_evaluation` to `true`. Such documents are
+excluded from evaluation entirely and reported on stderr.
+
 Results can be stratified by dataset or any user-defined mapping.
 
 ## Input format, scorer entry points, and naming conventions
@@ -84,9 +88,12 @@ The scorer accepts two entry points (the same example structure is used in both)
 Each JSONL record should contain a dictionary with these fields:
 
 - `document_metadata`: `{ "document_id": "...", "primary_dataset_name": "..." }`
-- `ground_truth`: `{ "transcription_unit": "..." }`
+- `ground_truth`: `{ "transcription_unit": "...", "exclude_from_icdar_evaluation": false }`
 - `ocr_hypothesis`: `{ "transcription_unit": "..." }`
 - `ocr_postcorrection_output`: `{ "transcription_unit": "..." }`
+
+The `ground_truth.exclude_from_icdar_evaluation` field is optional. When it is
+set to `true`, the corresponding document is ignored during scoring.
 
 All JSON documents conform to the HIPE-OCRepair JSON Schema (add link later).
 
