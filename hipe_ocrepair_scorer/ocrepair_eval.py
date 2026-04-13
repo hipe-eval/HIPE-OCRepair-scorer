@@ -13,13 +13,20 @@ def norm(string: str) -> str:
 
     Normalization policy:
     - Case-fold to lowercase.
-    - Keep Unicode letters and digits (including accented characters).
-    - Replace all other characters (punctuation, symbols) with space.
+    - Apply a small set of explicit compatibility/domain-specific mappings,
+      including ligatures and historical/decomposed forms:
+      ``ß -> ss``, ``ꝛ -> r``, ``œ -> oe``, ``æ -> ae``,
+      ``aͤ -> ä``, ``oͤ -> ö``, ``uͤ -> ü``.
+    - Keep remaining Unicode letters, digits, and underscores matched by
+      ``\w``; replace other characters (punctuation, symbols, etc.) with
+      spaces.
+    - Replace underscores with spaces.
     - Collapse whitespace.
-    - explicate some ligatures.
 
-    This means evaluation is case-insensitive and punctuation-insensitive,
-    but sensitive to accented characters (é ≠ e).
+    This means evaluation is case-insensitive and punctuation-insensitive.
+    Most accented characters remain distinct (for example ``é != e``), but
+    the normalization is not strictly accent-/codepoint-preserving because
+    of the explicit mappings above.
     """
     # lowercase
     string = string.lower()
