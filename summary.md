@@ -214,42 +214,30 @@ where H = hits, S = substitutions, D = deletions, I = insertions. Unlike standar
 
 ## Text Normalisation
 
-Before scoring, text is normalised as follows:
+Before scoring, each transcription string is passed through `norm()` in [`hipe_ocrepair_scorer/ocrepair_eval.py`](/Users/siclemat/pj/2026/impresso/HIPE-OCRepair-scorer/hipe_ocrepair_scorer/ocrepair_eval.py). The implemented pipeline is:
 
-- Case-folded to lowercase
-- Unicode-normalised so canonically equivalent forms compare the same (for example, decomposed umlaut sequences are folded to their composed equivalents)
-- Explicit ligature / historical-character mappings applied where implemented by the scorer (e.g. `ß → ss`, `œ → oe`, `æ → ae`)
-- Unicode letters and digits kept (including accented characters such as é, ç, ü)
-- Underscores replaced with space (underscore is `\w` but is explicitly remapped in a separate step)
-- All other non-`\w` characters (punctuation, symbols) replaced with space
-- Whitespace collapsed
+- Lowercase the full string.
+- Apply a small set of explicit historical-character and ligature rewrites:
+  `ß → ss`, `ꝛ → r`, `œ → oe`, `æ → ae`, `aͤ → ä`, `oͤ → ö`, `uͤ → ü`.
+- Remove dataset-specific line-break markers by deleting `—\n` and `¬\n` before token cleanup.
+- Replace every remaining non-`\w` character with a space.
+- Replace underscores with spaces as an extra cleanup step, because `_` is included in `\w`.
+- Collapse repeated whitespace and trim leading/trailing spaces.
 
-Evaluation is therefore **case-insensitive** and **punctuation-insensitive**. It is also insensitive to the scorer's documented canonical-equivalence and ligature/historical-character folds (for example `ß/ss`, `œ/oe`, `æ/ae`, and decomposed vs. composed umlaut forms), while remaining **sensitive to ordinary accented-vs.-unaccented letter differences** where no explicit mapping is applied (e.g. `é ≠ e`). This normalisation applies to all primary metrics. The participation guidelines have been updated to reflect this as the confirmed policy (corrigendum 20.03.2026).
+Operationally, this makes the evaluation **case-insensitive** and largely **punctuation-insensitive**, while still preserving distinctions between accented and unaccented letters unless an explicit rewrite above maps them together. For example, `é` remains distinct from `e`, while `œ` is normalised to `oe`. The line-break handling is not a generic "remove all hyphenation" pass; it specifically targets the encoded break markers present in the benchmark data.
 
-> **⚠️ Release blocker — layout normalisation:** The guidelines specify a prior layout-normalisation step (soft-hyphen removal, line-break conversion), referenced as `normalise_layout()` in `hipe_ocrepair_scorer/utils/normalisation.py`. This function **does not yet exist** in the v0.9 scorer. Without it, line-break tokens and soft hyphens are treated as regular characters rather than being collapsed. This affects all official competition test cells that carry line-break encoding: `dta19` (all noise levels) and `impresso-snippets`. The `icdar2017` dataset has no line-break encoding and is unaffected. (`overproof-combined` and `impresso-nzz` are also affected but have no competition test sets.) **Layout normalisation must be implemented and validated before the test-phase scorer release.**
+This normalisation is applied consistently to the reference, the raw OCR hypothesis, and the post-correction output before all primary metrics are computed.
 
 ---
 
-## Open Issues and Pre-evaluation Checklist
+## Release Status
 
-The following must be resolved before the official test-phase evaluation is run.
+The release blockers identified during the pre-release review have been resolved. In particular, the scorer now includes the benchmark-specific layout handling needed for encoded line-break markers in datasets such as `dta19` and `impresso-snippets`, and the summary above reflects the implemented normalisation policy rather than the earlier draft requirement.
 
-### Scorer / documentation mismatches
+Two distinctions remain important for users of the scorer:
 
-| Issue                                                                                         | Location                                                | Impact                                                       |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
-| Public task description uses "CER/WER" but scorer computes MER                                | Task website                                            | Misleads participants about the metric formula               |
-| Section 5.4 of the participation guidelines states "case-sensitive and punctuation-sensitive" | Participation guidelines v1                             | Contradicts scorer implementation and corrigendum 20.03.2026 |
-| `normalise_layout()` is referenced but does not exist                                         | `hipe_ocrepair_scorer/utils/normalisation.py` (missing) | Line-break and soft-hyphen handling absent for 4 datasets    |
-
-### Required scorer changes
-
-1. **Implement `normalise_layout()`** — soft-hyphen removal, line-break-to-space conversion; validate against `dta19` and `impresso-snippets` (the competition cells affected).
-2. **Surface `cmer_hyp` in scorer output** — the raw OCR baseline cMER should be a first-class output field, not reconstructed externally.
-3. **Implement the design-weighted mean** — the scorer's `averaged_scores` is unweighted; add an explicit weighted aggregation step or provide tooling so organisers can apply the 1/3 DTA weights externally.
-
-### Required documentation updates
-
-1. Align all public-facing text with the confirmed evaluation protocol: MER (not CER/WER), case-insensitive, punctuation-insensitive.
-2. Update participation guidelines Section 5.4 to match the corrigendum 20.03.2026 and scorer behaviour.
-3. Publish the confirmed weighting scheme (weight 1 per non-DTA test cell, weight 1/3 per DTA test cell) with the explicit formula so participants can reproduce the official ranking.
+- `fold_scores` reports the per-cell results that should be used for official dataset × language reporting.
+- `averaged_scores` is still an unweighted mean across folds; the official shared-task
+  ranking therefore applies the published design weights externally rather than taking
+  `averaged_scores` as the leaderboard value. It only concerns DTA weights which are 1/3
+  as there are three DTA folds; the other cells have weight 1 and are unaffected by this distinction.
