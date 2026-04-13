@@ -217,12 +217,14 @@ where H = hits, S = substitutions, D = deletions, I = insertions. Unlike standar
 Before scoring, text is normalised as follows:
 
 - Case-folded to lowercase
-- Unicode letters and digits kept (including accented characters: é, ç, ü)
+- Unicode-normalised so canonically equivalent forms compare the same (for example, decomposed umlaut sequences are folded to their composed equivalents)
+- Explicit ligature / historical-character mappings applied where implemented by the scorer (e.g. `ß → ss`, `œ → oe`, `æ → ae`)
+- Unicode letters and digits kept (including accented characters such as é, ç, ü)
 - Underscores replaced with space (underscore is `\w` but is explicitly remapped in a separate step)
 - All other non-`\w` characters (punctuation, symbols) replaced with space
 - Whitespace collapsed
 
-Evaluation is therefore **case-insensitive** and **punctuation-insensitive**, but **sensitive to accented characters** (é ≠ e). This normalisation applies to all primary metrics. The participation guidelines have been updated to reflect this as the confirmed policy (corrigendum 20.03.2026).
+Evaluation is therefore **case-insensitive** and **punctuation-insensitive**. It is also insensitive to the scorer's documented canonical-equivalence and ligature/historical-character folds (for example `ß/ss`, `œ/oe`, `æ/ae`, and decomposed vs. composed umlaut forms), while remaining **sensitive to ordinary accented-vs.-unaccented letter differences** where no explicit mapping is applied (e.g. `é ≠ e`). This normalisation applies to all primary metrics. The participation guidelines have been updated to reflect this as the confirmed policy (corrigendum 20.03.2026).
 
 > **⚠️ Release blocker — layout normalisation:** The guidelines specify a prior layout-normalisation step (soft-hyphen removal, line-break conversion), referenced as `normalise_layout()` in `hipe_ocrepair_scorer/utils/normalisation.py`. This function **does not yet exist** in the v0.9 scorer. Without it, line-break tokens and soft hyphens are treated as regular characters rather than being collapsed. This affects all official competition test cells that carry line-break encoding: `dta19` (all noise levels) and `impresso-snippets`. The `icdar2017` dataset has no line-break encoding and is unaffected. (`overproof-combined` and `impresso-nzz` are also affected but have no competition test sets.) **Layout normalisation must be implemented and validated before the test-phase scorer release.**
 
